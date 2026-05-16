@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebas
 import { getDatabase, ref, set, push, onValue, remove, update } 
 from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-// Firebase Config Setup (আপনার দেওয়া ডেটাবেজ লিংক)
+// Firebase Config Setup
 const firebaseConfig = {
     databaseURL: "https://danmark-admin-default-rtdb.firebaseio.com/"
 };
@@ -13,11 +13,34 @@ const database = getDatabase(app);
 const clientForm = document.getElementById("clientForm");
 const tableBody = document.getElementById("clientTableBody");
 
+// ইমেজ ফাইলকে Base64 টেক্সটে রূপান্তর করার হেল্পার ফাংশন
+function getBase64(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+    });
+}
+
 // 1. CREATE & UPDATE function
-clientForm.addEventListener("submit", (e) => {
+clientForm.addEventListener("submit", async (e) => {
     e.preventDefault();
 
     const id = document.getElementById("clientId").value;
+    const photoFile = document.getElementById("clientPhoto").files[0];
+    let photoBase64 = document.getElementById("existingPhotoBase64").value || "";
+
+    // যদি নতুন কোনো ছবি আপলোড করা হয়, তবে সেটাকে কনভার্ট করবে
+    if (photoFile) {
+        try {
+            photoBase64 = await getBase64(photoFile);
+        } catch (err) {
+            alert("Error processing image: " + err.message);
+            return;
+        }
+    }
+
     const clientData = {
         name: document.getElementById("clientName").value,
         gmail: document.getElementById("clientGmail").value,
@@ -27,7 +50,8 @@ clientForm.addEventListener("submit", (e) => {
         issueDate: document.getElementById("issueDate").value,
         expiryDate: document.getElementById("expiryDate").value,
         visaType: document.getElementById("visaType").value,
-        visaStatus: document.getElementById("visaStatus").value
+        visaStatus: document.getElementById("visaStatus").value,
+        photo: photoBase64  // ডাটাবেজে ছবি সেভ করার জন্য প্রোপার্টি
     };
 
     if (id === "") {
@@ -35,8 +59,9 @@ clientForm.addEventListener("submit", (e) => {
         const newRef = push(ref(database, 'clients'));
         set(newRef, clientData)
             .then(() => {
-                alert("Data Saved Successfully to Firebase!");
+                alert("Data & Photo Saved Successfully to Firebase!");
                 clientForm.reset();
+                document.getElementById("existingPhotoBase64").value = "";
             })
             .catch((err) => alert("Error saving data: " + err.message));
     } else {
@@ -44,9 +69,10 @@ clientForm.addEventListener("submit", (e) => {
         const updateRef = ref(database, 'clients/' + id);
         update(updateRef, clientData)
             .then(() => {
-                alert("Data Updated Successfully!");
+                alert("Data & Photo Updated Successfully!");
                 document.getElementById("submitBtn").innerText = "Save Client Data";
                 document.getElementById("clientId").value = "";
+                document.getElementById("existingPhotoBase64").value = "";
                 clientForm.reset();
             })
             .catch((err) => alert("Error updating data: " + err.message));
@@ -67,6 +93,11 @@ onValue(clientsRef, (snapshot) => {
             if(data.visaStatus === "Issued") badgeClass = "badge-issued";
             if(data.visaStatus === "Rejected") badgeClass = "badge-rejected";
 
+            // ডাটাবেজে ছবি থাকলে সেটা দেখাবে, না থাকলে No Photo টেক্সট দেখাবে
+            const imgHtml = data.photo 
+                ? `<img src="${data.photo}" class="table-img" alt="Client">` 
+                : `<span style="color:#999; font-size: 13px;">No Photo</span>`;
+
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td>${sl++}</td>
@@ -79,6 +110,7 @@ onValue(clientsRef, (snapshot) => {
                 <td>${data.expiryDate}</td>
                 <td>${data.visaType}</td>
                 <td><span class="badge ${badgeClass}">${data.visaStatus}</span></td>
+                <td>${imgHtml}</td>
                 <td>
                     <div class="action-btns">
                         <button class="btn-edit" data-id="${id}">Edit</button>
@@ -99,6 +131,10 @@ onValue(clientsRef, (snapshot) => {
                 document.getElementById("expiryDate").value = data.expiryDate;
                 document.getElementById("visaType").value = data.visaType;
                 document.getElementById("visaStatus").value = data.visaStatus;
+                
+                // এডিট মুডে আগের ছবি ব্যাকআপ রাখা হলো যাতে নতুন করে ছবি সিলেক্ট না করলেও ছবি ডিলিট না হয়ে যায়
+                document.getElementById("existingPhotoBase64").value = data.photo || "";
+                document.getElementById("clientPhoto").value = ""; 
 
                 document.getElementById("submitBtn").innerText = "Update Client Data";
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -116,6 +152,6 @@ onValue(clientsRef, (snapshot) => {
             tableBody.appendChild(tr);
         });
     } else {
-        tableBody.innerHTML = `<tr><td colspan="11" style="text-align:center;">No data found in Database</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="12" style="text-align:center;">No data found in Database</td></tr>`;
     }
 });
